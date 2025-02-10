@@ -19,13 +19,6 @@ WORKDIR /app/ComfyUI
 # ComfyUI bağımlılıklarını yükle
 RUN pip install -r requirements.txt
 
-# API bağımlılıklarını yükle
-COPY requirements.txt /app/
-RUN pip install -r /app/requirements.txt
-
-# Uygulama kodlarını kopyala
-COPY . /app/
-
 # Port'ları aç
 EXPOSE 8000
 EXPOSE 8188
