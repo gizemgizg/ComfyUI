@@ -1,166 +1,103 @@
-#This is an example that uses the websockets api to know when a prompt execution is done
-#Once the prompt execution is done it downloads the images using the /history endpoint
-
-import websocket #NOTE: websocket-client (https://github.com/websocket-client/websocket-client)
+import websocket
 import uuid
 import json
 import urllib.request
 import urllib.parse
+import logging
 
-server_address = "127.0.0.1:8188"
-client_id = str(uuid.uuid4())
+# Server Configuration
+SERVER_ADDRESS = "127.0.0.1:8188"
+CLIENT_ID = str(uuid.uuid4())
+
+# Setup Logging
+def setup_logger():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def log_info(message):
+    logging.info(message)
 
 def queue_prompt(prompt):
-    p = {"prompt": prompt, "client_id": client_id}
-    data = json.dumps(p).encode('utf-8')
-    req =  urllib.request.Request("http://{}/prompt".format(server_address), data=data)
-    return json.loads(urllib.request.urlopen(req).read())
+    """Send a prompt to the server and queue it."""
+    try:
+        payload = {"prompt": prompt, "client_id": CLIENT_ID}
+        data = json.dumps(payload).encode('utf-8')
+        request = urllib.request.Request(f"http://{SERVER_ADDRESS}/prompt", data=data)
+        response = urllib.request.urlopen(request)
+        return json.loads(response.read())
+    except Exception as e:
+        logging.error(f"Error in queue_prompt: {e}")
+        return None
 
 def get_image(filename, subfolder, folder_type):
-    data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
-    url_values = urllib.parse.urlencode(data)
-    with urllib.request.urlopen("http://{}/view?{}".format(server_address, url_values)) as response:
-        return response.read()
+    """Retrieve an image by filename from the server."""
+    try:
+        params = {"filename": filename, "subfolder": subfolder, "type": folder_type}
+        url_values = urllib.parse.urlencode(params)
+        with urllib.request.urlopen(f"http://{SERVER_ADDRESS}/view?{url_values}") as response:
+            return response.read()
+    except Exception as e:
+        logging.error(f"Error in get_image: {e}")
+        return None
 
 def get_history(prompt_id):
-    with urllib.request.urlopen("http://{}/history/{}".format(server_address, prompt_id)) as response:
-        return json.loads(response.read())
+    """Retrieve the history of a specific prompt."""
+    try:
+        with urllib.request.urlopen(f"http://{SERVER_ADDRESS}/history/{prompt_id}") as response:
+            return json.loads(response.read())
+    except Exception as e:
+        logging.error(f"Error in get_history: {e}")
+        return None
 
 def get_images(ws, prompt):
-    prompt_id = queue_prompt(prompt)['prompt_id']
-    output_images = {}
-    while True:
-        out = ws.recv()
-        if isinstance(out, str):
-            message = json.loads(out)
-            if message['type'] == 'executing':
-                data = message['data']
-                if data['node'] is None and data['prompt_id'] == prompt_id:
-                    break #Execution is done
-        else:
-            # If you want to be able to decode the binary stream for latent previews, here is how you can do it:
-            # bytesIO = BytesIO(out[8:])
-            # preview_image = Image.open(bytesIO) # This is your preview in PIL image format, store it in a global
-            continue #previews are binary data
+    """Retrieve images for a given prompt using WebSocket communication."""
+    try:
+        prompt_id = queue_prompt(prompt)['prompt_id']
+        output_images = {}
+        while True:
+            message = ws.recv()
+            if isinstance(message, str):
+                parsed_message = json.loads(message)
+                if parsed_message['type'] == 'executing':
+                    data = parsed_message['data']
+                    if data['node'] is None and data['prompt_id'] == prompt_id:
+                        break
+            else:
+                continue
 
-    history = get_history(prompt_id)[prompt_id]
-    for node_id in history['outputs']:
-        node_output = history['outputs'][node_id]
-        images_output = []
-        if 'images' in node_output:
-            for image in node_output['images']:
-                image_data = get_image(image['filename'], image['subfolder'], image['type'])
-                images_output.append(image_data)
-        output_images[node_id] = images_output
+        history = get_history(prompt_id)
+        if not history:
+            return {}
 
-    return output_images
+        prompt_history = history[prompt_id]
+        for node_id, node_output in prompt_history['outputs'].items():
+            images_output = []
+            if 'images' in node_output:
+                for image in node_output['images']:
+                    image_data = get_image(image['filename'], image['subfolder'], image['type'])
+                    if image_data:
+                        images_output.append(image_data)
+            output_images[node_id] = images_output
 
-prompt_text = """
-{
-    "3": {
-        "class_type": "KSampler",
-        "inputs": {
-            "cfg": 8,
-            "denoise": 1,
-            "latent_image": [
-                "5",
-                0
-            ],
-            "model": [
-                "4",
-                0
-            ],
-            "negative": [
-                "7",
-                0
-            ],
-            "positive": [
-                "6",
-                0
-            ],
-            "sampler_name": "euler",
-            "scheduler": "normal",
-            "seed": 8566257,
-            "steps": 20
+        return output_images
+
+    except Exception as e:
+        logging.error(f"Error in get_images: {e}")
+        return {}
+
+def upload_image(image_data, image_name):
+    """Upload an image to the server."""
+    try:
+        url = f"http://{SERVER_ADDRESS}/upload/image"
+        files = {
+            'image': (image_name, image_data, 'image/jpeg')
         }
-    },
-    "4": {
-        "class_type": "CheckpointLoaderSimple",
-        "inputs": {
-            "ckpt_name": "v1-5-pruned-emaonly.safetensors"
-        }
-    },
-    "5": {
-        "class_type": "EmptyLatentImage",
-        "inputs": {
-            "batch_size": 1,
-            "height": 512,
-            "width": 512
-        }
-    },
-    "6": {
-        "class_type": "CLIPTextEncode",
-        "inputs": {
-            "clip": [
-                "4",
-                1
-            ],
-            "text": "masterpiece best quality girl"
-        }
-    },
-    "7": {
-        "class_type": "CLIPTextEncode",
-        "inputs": {
-            "clip": [
-                "4",
-                1
-            ],
-            "text": "bad hands"
-        }
-    },
-    "8": {
-        "class_type": "VAEDecode",
-        "inputs": {
-            "samples": [
-                "3",
-                0
-            ],
-            "vae": [
-                "4",
-                2
-            ]
-        }
-    },
-    "9": {
-        "class_type": "SaveImage",
-        "inputs": {
-            "filename_prefix": "ComfyUI",
-            "images": [
-                "8",
-                0
-            ]
-        }
-    }
-}
-"""
-
-prompt = json.loads(prompt_text)
-#set the text prompt for our positive CLIPTextEncode
-prompt["6"]["inputs"]["text"] = "masterpiece best quality man"
-
-#set the seed for our KSampler node
-prompt["3"]["inputs"]["seed"] = 5
-
-ws = websocket.WebSocket()
-ws.connect("ws://{}/ws?clientId={}".format(server_address, client_id))
-images = get_images(ws, prompt)
-ws.close() # for in case this example is used in an environment where it will be repeatedly called, like in a Gradio app. otherwise, you'll randomly receive connection timeouts
-#Commented out code to display the output images:
-
-# for node_id in images:
-#     for image_data in images[node_id]:
-#         from PIL import Image
-#         import io
-#         image = Image.open(io.BytesIO(image_data))
-#         image.show()
-
+        response = urllib.request.Request(
+            url,
+            data=files['image'][1],
+            headers={'Content-Type': 'image/jpeg'}
+        )
+        response = urllib.request.urlopen(response)
+        return json.loads(response.read())
+    except Exception as e:
+        logging.error(f"Error in upload_image: {e}")
+        return None
