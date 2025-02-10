@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # ComfyUI'yi klonla
-RUN git clone https://github.com/comfyanonymous/ComfyUI.git
+RUN git clone https://github.com/gizemgizg/ComfyUI.git
 WORKDIR /app/ComfyUI
 
 # ComfyUI bağımlılıklarını yükle
