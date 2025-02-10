@@ -14,7 +14,7 @@ WORKDIR /app
 
 # ComfyUI'yi klonla
 RUN git clone https://github.com/gizemgizg/ComfyUI.git
-WORKDIR /app/ComfyUI
+WORKDIR ComfyUI
 
 # ComfyUI bağımlılıklarını yükle
 RUN pip install -r requirements.txt
@@ -24,8 +24,8 @@ EXPOSE 8000
 EXPOSE 8188
 
 # Başlangıç scripti
-COPY start.sh /app/
-RUN chmod +x /app/start.sh
+COPY start.sh
+RUN chmod +x start.sh
 
 # Uygulamayı başlat
-CMD ["/app/start.sh"] 
+CMD ["start.sh"] 
