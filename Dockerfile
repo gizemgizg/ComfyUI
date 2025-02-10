@@ -13,19 +13,26 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # ComfyUI'yi klonla
-RUN git clone https://github.com/gizemgizg/ComfyUI.git
-WORKDIR ComfyUI
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git
+WORKDIR /app/ComfyUI
 
 # ComfyUI bağımlılıklarını yükle
 RUN pip install -r requirements.txt
+
+# API bağımlılıklarını yükle
+COPY requirements.txt /app/
+RUN pip install -r /app/requirements.txt
+
+# Uygulama kodlarını kopyala
+COPY . /app/
 
 # Port'ları aç
 EXPOSE 8000
 EXPOSE 8188
 
 # Başlangıç scripti
-COPY start.sh
-RUN chmod +x start.sh
+COPY start.sh /app/
+RUN chmod +x /app/start.sh
 
 # Uygulamayı başlat
-CMD ["start.sh"] 
+CMD ["/app/start.sh"] 
